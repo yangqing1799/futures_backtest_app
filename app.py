@@ -4,22 +4,28 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
-from jqdatasdk import auth, get_price, get_security_info, query, valuation  # 聚宽API核心库
+from jqdatasdk import auth, get_price, get_security_info  # 聚宽API核心库
+
+# ==================== 在这里设置您的聚宽账号 ====================
+JQ_USER = "15902346540"  # 请替换为您的聚宽账号
+JQ_PASSWORD = "Hnjt1993"  # 请替换为您的聚宽密码
+# ==============================================================
 
 # ---------------------- 1. 聚宽API初始化 + 数据获取（核心） ----------------------
-def jq_auth(jq_user, jq_password):
+def jq_auth():
     """聚宽账号登录"""
     try:
-        auth(jq_user, jq_password)
+        auth(JQ_USER, JQ_PASSWORD)
+        st.sidebar.success("✅ 聚宽API登录成功！")
         return True
     except Exception as e:
-        st.error(f"❌ 聚宽账号登录失败：{str(e)}")
+        st.sidebar.error(f"❌ 聚宽账号登录失败：{str(e)}")
         return False
 
 def get_jq_shfe_data(
     symbol="RB8888.XSGE",  # 聚宽上期所代码（正确的聚宽格式）
-    start_date="2023-01-01",
-    end_date="2024-01-01",
+    start_date="2025-01-01",
+    end_date="2025-06-01",
     freq="1m"  # 1m=分钟线，1d=日线
 ):
     """
@@ -35,10 +41,6 @@ def get_jq_shfe_data(
         if sec_info is None:
             st.error(f"❌ 聚宽中未找到合约 {symbol}，请检查代码格式。")
             return None
-        
-        # 检查是否期货品种
-        if sec_info.type != 'futures':
-            st.warning(f"⚠️ {symbol} 不是期货品种！")
     except Exception as e:
         st.error(f"❌ 获取合约信息失败：{str(e)}")
         return None
@@ -124,10 +126,6 @@ class SHFEFuturesBacktest:
         self.holdings = 0  # 持仓手数（+多单，-空单）
         self.total_asset = [initial_capital]
         self.trade_records = []
-        
-        st.info(f"📊 合约信息：{self.futures_name} ({symbol})，"
-                f"合约乘数：{self.contract_size}吨/手，"
-                f"最小变动价位：{self.pricetick}元")
     
     def set_params(self, margin_ratio=None, commission_rate=None, slippage=None):
         """自定义参数覆盖默认值"""
@@ -339,41 +337,23 @@ class SHFEFuturesBacktest:
 # ---------------------- 3. Streamlit可视化界面 ----------------------
 st.set_page_config(page_title="聚宽API - 上期所期货回测", page_icon="📊", layout="wide")
 
-# 侧边栏：聚宽账号登录
-st.sidebar.title("🔑 聚宽账号配置")
-jq_user = st.sidebar.text_input("聚宽账号（手机号/邮箱）", placeholder="请输入你的聚宽账号")
-jq_password = st.sidebar.text_input("聚宽密码", type="password", placeholder="请输入你的聚宽密码")
-
-# 初始化session状态
+# 自动登录聚宽
 if "jq_login" not in st.session_state:
-    st.session_state["jq_login"] = False
-if "shfe_data" not in st.session_state:
-    st.session_state["shfe_data"] = None
-if "current_symbol" not in st.session_state:
-    st.session_state["current_symbol"] = "RB8888.XSGE"
-
-login_btn = st.sidebar.button("登录聚宽API", type="primary")
-
-# 登录状态校验
-if login_btn:
-    if not jq_user or not jq_password:
-        st.sidebar.error("❌ 账号/密码不能为空！")
-    else:
-        with st.spinner("正在登录聚宽API..."):
-            login_success = jq_auth(jq_user, jq_password)
+    with st.spinner("正在自动登录聚宽API..."):
+        login_success = jq_auth()
         if login_success:
-            st.sidebar.success("✅ 聚宽API登录成功！")
             st.session_state["jq_login"] = True
         else:
-            st.session_state["jq_login"] = False
-elif not st.session_state["jq_login"]:
-    st.sidebar.warning("⚠️ 请先登录聚宽API")
-    st.info("请先在左侧输入聚宽账号密码并点击登录")
-    st.stop()
+            st.error("聚宽API登录失败，请检查代码中的账号密码配置")
+            st.stop()
 
 # 主界面标题
 st.title("📊 上海期货交易所（上期所）期货回测")
 st.markdown("### 基于聚宽API | 无需外接数据源 | 一键获取历史数据")
+
+# 侧边栏：状态信息
+st.sidebar.title("🔑 聚宽账号状态")
+st.sidebar.success("✅ 聚宽API已自动登录")
 
 # 第一步：选择品种和时间范围
 st.divider()
@@ -461,9 +441,9 @@ if get_data_btn:
         st.session_state["shfe_data"] = None
 else:
     # 检查是否已有数据
-    if st.session_state["shfe_data"] is not None:
+    if "shfe_data" in st.session_state and st.session_state["shfe_data"] is not None:
         df = st.session_state["shfe_data"]
-        st.success(f"✅ 已加载 {st.session_state['current_symbol']} 的历史数据，共 {len(df)} 条")
+        st.success(f"✅ 已加载 {st.session_state.get('current_symbol', 'N/A')} 的历史数据，共 {len(df)} 条")
     else:
         st.info("ℹ️ 请先点击「一键获取聚宽历史数据」按钮获取数据")
         st.stop()
@@ -476,41 +456,28 @@ with col1:
     fast_window = st.slider("📈 短期均线窗口", min_value=3, max_value=30, value=5, step=1)
     slow_window = st.slider("📉 长期均线窗口", min_value=10, max_value=60, value=10, step=1)
     
-    # 显示均线预览
-    if df is not None and len(df) > 0:
-        df_preview = df.copy()
-        df_preview["ma_fast"] = df_preview["close"].rolling(fast_window).mean()
-        df_preview["ma_slow"] = df_preview["close"].rolling(slow_window).mean()
-        df_preview = df_preview.tail(50)
-        
-        fig_ma = px.line(df_preview, x="datetime", y=["close", "ma_fast", "ma_slow"], 
-                         title="均线策略预览（最近50条）", 
-                         labels={"value": "价格", "variable": "线型"},
-                         template="plotly_white")
-        fig_ma.update_traces(line=dict(width=2))
-        st.plotly_chart(fig_ma, use_container_width=True)
-    
 with col2:
     initial_capital = st.number_input("💰 初始资金（元）", min_value=10000, max_value=10000000, value=1000000, step=100000)
     margin_ratio = st.slider("📌 保证金比例", min_value=0.05, max_value=0.2, value=0.10, step=0.01)
     commission_rate = st.slider("💴 手续费率（万分之）", min_value=0.1, max_value=2.0, value=1.0, step=0.1)
     slippage = st.slider("🛶 滑点（点）", min_value=0.0, max_value=20.0, value=2.0, step=0.1)
-    
-    st.info(f"📊 当前合约规格：\n- 合约乘数：{st.session_state.get('contract_size', 10)}吨/手\n- 最小变动价位：{st.session_state.get('pricetick', 1)}元")
 
 # 第三步：执行回测
 st.divider()
 st.subheader("🚀 运行回测")
 run_backtest_btn = st.button("开始回测", type="primary", use_container_width=True)
 if run_backtest_btn:
-    if df is None or len(df) == 0:
+    if "shfe_data" not in st.session_state or st.session_state["shfe_data"] is None:
         st.error("❌ 没有有效数据，请先获取数据！")
         st.stop()
+    
+    df = st.session_state["shfe_data"]
+    symbol = st.session_state.get("current_symbol", "RB8888.XSGE")
         
     # 初始化回测引擎
     backtest_engine = SHFEFuturesBacktest(
         data=df,
-        symbol=st.session_state["current_symbol"],
+        symbol=symbol,
         initial_capital=initial_capital
     )
     # 设置自定义参数
@@ -561,7 +528,7 @@ if run_backtest_btn:
         asset_df,
         x="时间",
         y="总资产（元）",
-        title=f"{selected_name}（{st.session_state['current_symbol']}）双均线策略总资产变化",
+        title=f"{selected_name}（{symbol}）双均线策略总资产变化",
         template="plotly_white"
     )
     fig.add_hline(y=initial_capital, line_dash="dash", line_color="red", annotation_text="初始资金")
@@ -578,33 +545,6 @@ if run_backtest_btn:
         trade_df = pd.DataFrame(backtest_engine.trade_records)
         trade_df["累计盈亏"] = trade_df[trade_df["action"] == "平仓"]["profit"].cumsum()
         st.dataframe(trade_df, use_container_width=True)
-        
-        # 交易统计
-        st.markdown("#### 📊 交易统计")
-        if len(trade_df) > 0:
-            # 分离开仓和平仓记录
-            opening_trades = trade_df[trade_df["action"] == "开仓"]
-            closing_trades = trade_df[trade_df["action"] == "平仓"]
-            
-            if len(closing_trades) > 0:
-                winning_trades = closing_trades[closing_trades["profit"] > 0]
-                losing_trades = closing_trades[closing_trades["profit"] <= 0]
-                
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("开仓次数", len(opening_trades))
-                col2.metric("平仓次数", len(closing_trades))
-                col3.metric("盈利交易数", len(winning_trades))
-                col4.metric("亏损交易数", len(losing_trades))
-                
-                col5, col6, col7, col8 = st.columns(4)
-                win_rate = len(winning_trades) / len(closing_trades) * 100 if len(closing_trades) > 0 else 0
-                col5.metric("胜率", f"{win_rate:.1f}%")
-                avg_profit = winning_trades["profit"].mean() if len(winning_trades) > 0 else 0
-                col6.metric("平均盈利", f"{avg_profit:.2f} 元")
-                avg_loss = losing_trades["profit"].mean() if len(losing_trades) > 0 else 0
-                col7.metric("平均亏损", f"{avg_loss:.2f} 元")
-                total_profit = closing_trades["profit"].sum()
-                col8.metric("总盈亏", f"{total_profit:.2f} 元")
     else:
         st.info("ℹ️ 本次回测无交易产生，可调整均线窗口重试。")
 
@@ -615,29 +555,23 @@ with st.expander("点击查看使用说明", expanded=False):
     st.markdown("""
     ### 🎯 使用指南
     
-    1. **聚宽账号**：需要聚宽（JoinQuant）账号才能获取数据
+    1. **聚宽账号**：已在代码中配置，无需手动输入
     2. **期货代码格式**：
        - 指数合约：`RB9999.XSGE`（螺纹钢指数）
        - 主力合约：`RB8888.XSGE`（螺纹钢主力）
        - 具体合约：`RB2410.XSGE`（螺纹钢2410合约）
     
-    3. **交易所后缀**：
-       - 上期所：`.XSGE`
-       - 大商所：`.XDCE`
-       - 郑商所：`.XZCE`
-       - 中金所：`.CCFX`
-    
-    4. **回测参数说明**：
+    3. **回测参数说明**：
        - 保证金比例：默认10%（螺纹钢标准）
        - 手续费率：默认万分之一
        - 滑点：默认2个最小变动价位
     
-    5. **注意事项**：
+    4. **注意事项**：
        - 聚宽API有调用频率限制
        - 期货数据需要聚宽VIP权限获取完整历史数据
        - 回测结果仅供参考，不构成投资建议
        
-    6. **数据获取**：
+    5. **数据获取**：
        - 主力连续合约（8888）数据最全
        - 指数合约（9999）适合长线回测
        - 具体合约（如RB2410）在到期前才有数据

@@ -17,14 +17,14 @@ def jq_auth(jq_user, jq_password):
         return False
 
 def get_jq_shfe_data(
-    symbol="RB9999   ．超高频   ．超高频",  # 聚宽上期所代码
+    symbol="RB9999",  # 聚宽上期所代码
     start_date="2023-01-01",
     end_date="2024-01-01",
     freq="1m"  # 1m=分钟线，1d=日线
 ):
     """
     从聚宽API获取上期所历史期货数据
-    :param symbol: 聚宽期货代码（如RB9999   ．超高频   ．超高频   ．超高频   ．超高频   ．超高频）
+    :param symbol: 聚宽期货代码（如RB9999）
     :param start_date/end_date: 数据时间范围
     :param freq: 周期（1m=分钟线，1d=日线）
     :return: 标准化DataFrame（适配回测引擎）
@@ -33,14 +33,14 @@ def get_jq_shfe_data(
     try:
         sec_info = get_security_info(symbol)
         if sec_info.exchange != "SHFE":
-            st.error   错误(f"❌ {symbol} 不是上期所品种！")
+            st.error(f"❌ {symbol} 不是上期所品种！")
             return None
     except:
-        st.error(f"❌ 聚宽中未找到合约 {symbol}，请检查代码格式（如RB9999   ．超高频   ．超高频   ．超高频）")
+        st.error(f"❌ 聚宽中未找到合约 {symbol}，请检查代码格式（如RB9999）")
         return None
     
     # 调用聚宽API获取K线数据
-    try:   试一试:
+    try:
         klines = get_price(
             security=symbol,
             start_date=start_date,
@@ -50,9 +50,9 @@ def get_jq_shfe_data(
             skip_paused=False,
             fq=None  # 期货无需复权
         )
-    except Exception as e:   例外情况如下：
+    except Exception as e:
         st.error(f"❌ 聚宽数据获取失败：{str(e)}")
-        return None   回来没有
+        return None
     
     # 数据格式标准化（适配回测引擎）
     df = klines.reset_index()  # 把时间索引转为列
@@ -63,11 +63,11 @@ def get_jq_shfe_data(
     df = df.dropna(subset=["open", "high", "low", "close"])
     
     st.success(f"✅ 聚宽数据获取成功！{symbol} | {start_date} 至 {end_date} | 共 {len(df)} 条记录")
-    return   返回 df
+    return df
 
 # ---------------------- 2. 上期所回测引擎（适配聚宽规则） ----------------------
 class SHFEFuturesBacktest:
-    def __init__(self, data, symbol="RB9999   ．超高频", initial_capital=1000000):
+    def __init__(self, data, symbol="RB9999", initial_capital=1000000):
         self.data = data.copy()
         self.symbol = symbol
         self.initial_capital = initial_capital
@@ -219,7 +219,7 @@ class SHFEFuturesBacktest:
         # 年化收益率（上期所交易时间：每年250个交易日，每天4小时）
         annual_return = daily_return.mean() * 250 * 4 if len(daily_return) > 0 else 0
         # 夏普比率（无风险利率按0计算）
-        sharpe = (daily_return.mean() / daily_return.std()) * np.sqrt(250 * 4) if   如果 (len(daily_return) > 0 and daily_return.std() != 0) else 0
+        sharpe = (daily_return.mean() / daily_return.std()) * np.sqrt(250 * 4) if (len(daily_return) > 0 and daily_return.std() != 0) else 0
         # 最大回撤
         max_dd = (asset / asset.cummax() - 1).min() * 100
         # 总交易次数（开平仓算1次）
@@ -270,11 +270,11 @@ col1, col2, col3 = st.columns(3)
 with col1:
     # 聚宽上期所品种列表
     symbol_options = {
-        "螺纹钢主力": "RB9999   ．超高频   ．超高频",
-        "螺纹钢2410": "RB2410   ．超高频",
-        "铜主力": "CU9999   ．超高频",
-        "铜2410": "CU2410   ．超高频",
-        "铝主力": "AL9999   ．超高频"
+        "螺纹钢主力": "RB9999",
+        "螺纹钢2410": "RB2410",
+        "铜主力": "CU9999",
+        "铜2410": "CU2410",
+        "铝主力": "AL9999"
     }
     selected_name = st.selectbox("选择上期所品种", list(symbol_options.keys()))
     symbol = symbol_options[selected_name]
@@ -379,5 +379,4 @@ if run_backtest_btn:
         trade_df = pd.DataFrame(backtest_engine.trade_records)
         st.dataframe(trade_df, use_container_width=True)
     else:
-
         st.info("ℹ️ 本次回测无交易产生，可调整均线窗口重试。")
